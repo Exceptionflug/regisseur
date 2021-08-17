@@ -23,6 +23,7 @@ public class Cutscene {
     private final List<PathChangeListener> listeners = new ArrayList<>();
     private final List<Player> players = new ArrayList<>();
     private final Map<UUID, GameMode> gameModeMap = new ConcurrentHashMap<>();
+    private final Map<UUID, Boolean> allowFlightMap = new ConcurrentHashMap<>();
     private final Plugin plugin;
     private Vector3D target;
     private ActivePath activePath;
@@ -46,7 +47,9 @@ public class Cutscene {
 
         players.forEach(player -> {
             gameModeMap.put(player.getUniqueId(), player.getGameMode());
+            allowFlightMap.put(player.getUniqueId(), player.getAllowFlight());
             player.setGameMode(GameMode.SPECTATOR);
+            player.setAllowFlight(true);
             player.teleport(points.get(0).location(player.getWorld()));
         });
 
@@ -79,6 +82,7 @@ public class Cutscene {
         Bukkit.getScheduler().runTask(plugin, () -> {
             players.forEach(player -> {
                 player.setGameMode(gameModeMap.get(player.getUniqueId()));
+                player.setAllowFlight(allowFlightMap.get(player.getUniqueId()));
             });
         });
     }
