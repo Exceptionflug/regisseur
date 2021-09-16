@@ -2,26 +2,21 @@ package de.exceptionflug.regisseur.path;
 
 import de.exceptionflug.regisseur.Cutscene;
 import de.exceptionflug.regisseur.interpolator.Interpolator;
-import de.exceptionflug.regisseur.util.Utils;
-import org.bukkit.entity.Player;
-
-import java.util.List;
+import org.bukkit.Bukkit;
 
 public final class ActiveInterpolatorPath extends ActivePath {
 
 	private final Interpolator interpolator;
-	private final List<Player> players;
 	private final long iterations;
 	private final Cutscene cutscene;
 
 	private long currentIteration;
 
 	public ActiveInterpolatorPath(Cutscene cutscene, Interpolator interpolator, long iterations) {
-		this.players = cutscene.players();
 		this.iterations = iterations;
 		this.interpolator = interpolator;
 		this.cutscene = cutscene;
-		players.forEach(player -> Utils.teleport(cutscene.plugin(), player, this.interpolator.getPoint(0)));
+		cutscene.cameraEntity().teleport(this.interpolator.getPoint(1 / (double) this.iterations).location(cutscene.cameraEntity().getWorld()));
 	}
 
 	@Override
@@ -30,7 +25,7 @@ public final class ActiveInterpolatorPath extends ActivePath {
 
 		final Position pos = this.interpolator.getPoint(this.currentIteration / (double) this.iterations);
 
-		players.forEach(player -> Utils.teleport(cutscene.plugin(), player, pos));
+		cutscene.cameraEntity().teleport(pos.location(cutscene.cameraEntity().getWorld()));
 
 		if (this.currentIteration >= this.iterations) {
 			stop(cutscene);

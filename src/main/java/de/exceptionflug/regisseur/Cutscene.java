@@ -4,7 +4,13 @@ import de.exceptionflug.regisseur.interpolator.*;
 import de.exceptionflug.regisseur.path.*;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
+import org.bukkit.Location;
+import org.bukkit.World;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
+import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
 
@@ -22,38 +28,59 @@ public class Cutscene {
     private final List<Position> points = new ArrayList<>();
     private final List<PathChangeListener> listeners = new ArrayList<>();
     private final List<Player> players = new ArrayList<>();
-    private final Map<UUID, GameMode> gameModeMap = new ConcurrentHashMap<>();
-    private final Map<UUID, Boolean> allowFlightMap = new ConcurrentHashMap<>();
+    private final Map<UUID, GameMode> gameModeMap = new HashMap<>();
+    private final Map<UUID, Location> locationMap = new HashMap<>();
     private final Plugin plugin;
+    private Entity cameraEntity;
     private Vector3D target;
     private ActivePath activePath;
+    private boolean debug;
 
     public Cutscene(Plugin plugin) {
         this.plugin = plugin;
     }
 
-    public void startTravelling(long frames, int teleportDelay) {
+    public void startTravelling(long frames, World world) {
         Position[] pathCopy = waypoints();
         boolean cmovLinear = pathCopy.length == 2;
-        frames *= (50D / teleportDelay);
+
+        cameraEntity = world.spawnEntity(points.get(0).location(world), EntityType.BEE, CreatureSpawnEvent.SpawnReason.CUSTOM, entity -> {
+            entity.setInvulnerable(true);
+            entity.setGravity(false);
+            entity.setCustomNameVisible(false);
+            entity.setSilent(true);
+            if (entity instanceof Mob) {
+                if (!debug) {
+                    ((Mob) entity).setInvisible(true);
+                }
+                ((Mob) entity).setAI(false);
+            }
+        });
 
         PositionInterpolator a = cmovLinear ? LinearInterpolator.instance : CubicInterpolator.instance;
-
-        PolarCoordinatesInterpolator b = target == null
-                ? cmovLinear ? LinearInterpolator.instance : CubicInterpolator.instance
-                : new TargetInterpolator(target);
+        PolarCoordinatesInterpolator b = target == null ? cmovLinear ? LinearInterpolator.instance : CubicInterpolator.instance : new TargetInterpolator(target);
+        if (debug) {
+            System.out.println("Waypoints: " + pathCopy.length+", Frames: " + frames);
+            System.out.println("Interpolator: " + a.getClass().getSimpleName() + ", Polar Interpolator: " + b.getClass().getSimpleName());
+        }
 
         activePath = new ActiveInterpolatorPath(this, new Interpolator(pathCopy, a, b), frames);
 
         players.forEach(player -> {
             gameModeMap.put(player.getUniqueId(), player.getGameMode());
-            allowFlightMap.put(player.getUniqueId(), player.getAllowFlight());
-            player.setGameMode(GameMode.SPECTATOR);
-            player.setAllowFlight(true);
-            player.teleport(points.get(0).location(player.getWorld()));
+            locationMap.put(player.getUniqueId(), player.getLocation());
         });
 
-        TIMER.scheduleAtFixedRate(new TimerTask() {
+        if (!debug) {
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                players.forEach(player -> {
+                    player.setGameMode(GameMode.SPECTATOR);
+                    player.setSpectatorTarget(cameraEntity);
+                });
+            }, 10);
+        }
+
+        new BukkitRunnable() {
             @Override
             public void run() {
                 if (!isTravelling()) {
@@ -62,7 +89,7 @@ public class Cutscene {
                 }
                 activePath.tick();
             }
-        }, teleportDelay, teleportDelay);
+        }.runTaskTimer(plugin, 0, 1);
     }
 
     public void target(Vector3D target) {
@@ -79,12 +106,15 @@ public class Cutscene {
 
     public void stopTravelling() {
         activePath = null;
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            players.forEach(player -> {
-                player.setGameMode(gameModeMap.get(player.getUniqueId()));
-                player.setAllowFlight(allowFlightMap.get(player.getUniqueId()));
-            });
+        players.forEach(player -> {
+            if (debug) {
+                return;
+            }
+            player.setSpectatorTarget(null);
+            player.setGameMode(gameModeMap.get(player.getUniqueId()));
+            player.teleport(locationMap.get(player.getUniqueId()));
         });
+        cameraEntity.remove();
     }
 
     public boolean isTravelling() {
@@ -97,6 +127,10 @@ public class Cutscene {
 
     private boolean isInBounds(int index) {
         return index > -1 && index < points.size();
+    }
+
+    public void debug(boolean debug) {
+        this.debug = debug;
     }
 
     public void waypoints(List<Position> points) {
@@ -182,6 +216,10 @@ public class Cutscene {
 
     public Plugin plugin() {
         return plugin;
+    }
+
+    public Entity cameraEntity() {
+        return cameraEntity;
     }
 
     public static void shutdown() {
